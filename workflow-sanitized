@@ -1,0 +1,579 @@
+{
+  "name": "AI Copywriting Pipeline - Sanitised",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const out = [];\n\nfor (const item of items) {\n  const json = item.json || {};\n  const binary = item.binary || {};\n\n  const emailId =\n    json.id ||\n    json.messageId ||\n    json.message_id ||\n    \"email\";\n\n  for (const [key, file] of Object.entries(binary)) {\n    if (!file) continue;\n\n    const fileName = file.fileName || `${key}.bin`;\n    const ext = (file.fileExtension || \"\").toLowerCase();\n    const mimeType = file.mimeType || \"\";\n\n    const isDocx =\n      ext === \"docx\" ||\n      mimeType.includes(\"wordprocessingml.document\");\n\n    if (!isDocx) continue;\n\n    const attachmentStem = fileName.replace(/\\.[^.]+$/, \"\");\n\n    const safeStem = attachmentStem\n      .replace(/[\\\\/:*?\"<>|]/g, \" \")\n      .replace(/\\s+/g, \" \")\n      .trim();\n\n    const briefId = `${emailId}__${key}__${safeStem}`;\n\n    out.push({\n      json: {\n        ...json,\n        binary_key: key,\n        original_attachment_filename: fileName,\n        attachment_stem: attachmentStem,\n        brief_id: briefId,\n        output_filename: `${safeStem} - Draft`,\n      },\n      binary: {\n        data: file\n      }\n    });\n  }\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1392,
+        -608
+      ],
+      "id": "869cfe01-683f-4fe1-994c-66962abcc261",
+      "name": "Split attachments"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=Extract data from this flattened brief and return JSON matching the schema exactly.\n\nFile name: {{ $json.original_attachment_filename }}\n\nBrief text:\n{{ $json.text }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {
+          "instructions": "Add your own instructions here",
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        -864,
+        -736
+      ],
+      "id": "71d93777-b6b7-4be8-a562-a01341511bb5",
+      "name": "Parser Node"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 8
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "label:Copywriting/Pending has:attachment -label:Copywriting/Done -label:Copywriting/Error",
+          "sender": "your-email@example.com"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "=",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1600,
+        -608
+      ],
+      "id": "de8e3783-69a3-4d98-9266-0e39449a1051",
+      "name": "Get Brief files"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-docx-converter.docxToText",
+      "typeVersion": 1,
+      "position": [
+        -1136,
+        -608
+      ],
+      "id": "8c3d2f6b-9f96-466f-9220-ce67e8fe4ad3",
+      "name": "DOCX -> Text"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a663d8c3-c92c-4e92-8ac0-054090a7381d",
+              "name": "brief_id",
+              "value": "={{$json.brief_id}}",
+              "type": "string"
+            },
+            {
+              "id": "e318d6a4-a2a5-4d0a-860b-c0ebae58231e",
+              "name": "original_attachment_filename",
+              "value": "={{ $json.original_attachment_filename }}",
+              "type": "string"
+            },
+            {
+              "id": "8d33c8a4-d5d4-4f31-8df9-379a1617278e",
+              "name": "binary_key",
+              "value": "={{ $json.binary_key }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1280,
+        -832
+      ],
+      "id": "34227480-a537-4bbf-a491-cd0526767fff",
+      "name": "Brief Envelope"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.flatMap(item => {\n  const brief = item.json || {};\n  const tasks = Array.isArray(brief.tasks) ? brief.tasks : [];\n\n  return tasks.map((task, index) => ({\njson: {\n    brief_id: brief.brief_id || \"\",\n    original_attachment_filename: brief.original_attachment_filename || \"\",\n    master_keyword_source: brief.master_keyword_source || \"\",\n\n    task_id: `${brief.brief_id || \"brief\"}__task_${Number(task.task_number) || index + 1}`,\n    task_number: Number(task.task_number) || index + 1,\n    company_name: brief.company_name || \"\",\n    contact_phone: brief.contact_phone || \"\",\n    target_geo: brief.target_geo || \"\",\n    content_type: brief.content_type || \"\",\n    target_audience: brief.target_audience || \"General audience\",\n    general_notes: brief.general_notes || \"\",\n    writing_style: brief.writing_style || \"Clear, simple, human\",\n\n    task_title: task.task_title || \"\",\n    required_word_count: Number(task.required_word_count) || 0,\n    outline: task.outline || \"\",\n    keywords: Array.isArray(task.keywords) ? task.keywords : [],\n    master_keyword_list: Array.isArray(brief.master_keyword_list) ? brief.master_keyword_list : [],\n\n    parser_input_tokens: Number(brief.parser_input_tokens || 0),\n    parser_output_tokens: Number(brief.parser_output_tokens || 0),\n    parser_total_tokens: Number(brief.parser_total_tokens || 0)\n  }\n  }));\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -800
+      ],
+      "id": "875212c7-a47c-442d-8c23-06b4cb6bad76",
+      "name": "Expand tasks lean"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* \n1. prefers task-level keywords first\n2. tops up from the master keyword list if task keywords are too few\n3. strips invisible Unicode chars that can break validator matching\n*/\nreturn items.map(item => {\n  const j = item.json || {};\n\n  const INVISIBLE_RE = /[\\u200B-\\u200D\\u2060\\uFEFF]/g;\n\n  const scrub = (value) =>\n    String(value || \"\")\n      .normalize(\"NFKC\")\n      .replace(INVISIBLE_RE, \"\")\n      .replace(/\\s+/g, \" \")\n      .trim();\n\n  const cleanArray = (arr) =>\n    Array.isArray(arr)\n      ? arr.map(scrub).filter(Boolean)\n      : [];\n\n  const dedupe = (arr) => {\n    const seen = new Set();\n    return arr.filter(v => {\n      const key = scrub(v).toLowerCase();\n      if (!key || seen.has(key)) return false;\n      seen.add(key);\n      return true;\n    });\n  };\n\n  const wc = Number(j.required_word_count || 0);\n\n  let targetKeywordCount = 2;\n  if (wc >= 350 && wc < 500) targetKeywordCount = 3;\n  else if (wc >= 500 && wc < 700) targetKeywordCount = 4;\n  else if (wc >= 700) targetKeywordCount = 5;\n\n  const taskKeywords = dedupe(cleanArray(j.keywords));\n  const masterKeywords = dedupe(cleanArray(j.master_keyword_list));\n\n  const taskKeywordSet = new Set(taskKeywords.map(k => k.toLowerCase()));\n\n  const combinedPool = dedupe([\n    ...taskKeywords,\n    ...masterKeywords.filter(k => !taskKeywordSet.has(k.toLowerCase()))\n  ]);\n\n  const selectedKeywords = combinedPool.slice(0, targetKeywordCount);\n\n  return {\n    json: {\n      ...j,\n      keywords: taskKeywords,\n      master_keyword_list: masterKeywords,\n      target_keyword_count: targetKeywordCount,\n      selected_keywords: selectedKeywords\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -800
+      ],
+      "id": "8ce464c2-2195-4d7e-94f4-ad4d450c4e41",
+      "name": "Keyword Planner"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4",
+          "mode": "list",
+          "cachedResultName": "GPT-5.4"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=Write one complete draft for this single task.\n\nFollow the system instructions for style, structure, keyword handling, and output format.\nPrioritise natural writing.\nDo not explain your process.\nReturn only the final draft output.\n\nYou are tasked with writing {{ $json.content_type }} for a Company name: {{ $json.company_name }}\nlocated in {{ $json.target_geo }} with Phone number {{ $json.contact_phone }}\n\nTarget audience:\n{{ $json.target_audience }}\n\nBusiness information:\n{{ $json.general_notes }}\n\nWriting instructions:\n{{ $json.writing_style }}\n\nTask title:\n{{ $json.task_title }}\n\nTarget word count:\n{{ $json.required_word_count }}\n\nSelected keywords:\n{{ Array.isArray($json.selected_keywords) ? $json.selected_keywords.join(', ') : (Array.isArray($json.keywords) ? $json.keywords.join(', ') : '') }}\n\nContent Outline:\n{{ $json.outline }}"
+            }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {
+          "instructions": "Add your own instructions here",
+          "reasoning": {
+            "reasoningOptions": {
+              "summary": "none"
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        -688
+      ],
+      "id": "aa0c2645-1571-4c15-abe5-65f3368dcb9c",
+      "name": "Copywriter"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "REPLACE_WITH_GMAIL_LABEL_ID"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -1488,
+        -384
+      ],
+      "id": "c293b26b-f154-456a-a84f-4ac2399b9639",
+      "name": "Pending -> Processing",
+      "webhookId": "REPLACE_WITH_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1024,
+        -816
+      ],
+      "id": "dcb517c3-8d30-4c3e-950c-6aeb022ca1ea",
+      "name": "(Brief + RAW Text) Envelope "
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const src = item.json || {};\n\n  let rawText = \"\";\n\n  if (Array.isArray(src.output)) {\n    for (const out of src.output) {\n      if (Array.isArray(out.content)) {\n        for (const c of out.content) {\n          if (typeof c.text === \"string\" && c.text.trim()) {\n            rawText = c.text;\n            break;\n          }\n        }\n      }\n      if (rawText) break;\n    }\n  }\n\n  if (!rawText && typeof src.output_text === \"string\") {\n    rawText = src.output_text;\n  }\n\n  if (!rawText && typeof src.text === \"string\") {\n    rawText = src.text;\n  }\n\n  const cleaned = rawText\n    .replace(/^```json\\s*/i, \"\")\n    .replace(/^```\\s*/i, \"\")\n    .replace(/\\s*```$/i, \"\")\n    .trim();\n\n  let parsed;\n  try {\n    parsed = JSON.parse(cleaned);\n  } catch (error) {\n    throw new Error(\n      `Failed to parse parser JSON for brief_id=${src.brief_id || \"unknown\"} | file=${src.original_attachment_filename || \"unknown\"} | preview=${cleaned.slice(0, 500)}`\n    );\n  }\n\n  const cleanArray = (arr) =>\n    Array.isArray(arr)\n      ? arr.map(v => String(v).trim()).filter(Boolean)\n      : [];\n\n  let contentType = String(parsed.content_type || \"\").trim();\n  contentType = contentType\n    .replace(/\\b\\d+\\s*x\\b/gi, \"\")\n    .replace(/\\bx\\s*\\d+\\b/gi, \"\")\n    .replace(/\\b\\d+\\s+(pages?|posts?|blogs?|articles?)\\b/gi, \"\")\n    .replace(/\\s{2,}/g, \" \")\n    .trim();\n\n  const explicitMaster = cleanArray(parsed.master_keyword_list);\n\n  const taskKeywords = Array.isArray(parsed.tasks)\n    ? parsed.tasks.flatMap(task => cleanArray(task.keywords))\n    : [];\n\n  const seen = new Set();\n  const dedupedTaskKeywords = taskKeywords.filter(keyword => {\n    const key = keyword.toLowerCase();\n    if (seen.has(key)) return false;\n    seen.add(key);\n    return true;\n  });\n\n  const finalMasterKeywordList =\n    explicitMaster.length > 0 ? explicitMaster : dedupedTaskKeywords;\n\n  return {\n    json: {\n        brief_id: src.brief_id || \"\",\n        original_attachment_filename: src.original_attachment_filename || \"\",\n        binary_key: src.binary_key || \"\",\n    \n        content_type: contentType,\n        company_name: parsed.company_name || \"\",\n        contact_phone: parsed.contact_phone || \"\",\n        target_audience: parsed.target_audience || \"\",\n        general_notes: parsed.general_notes || \"\",\n        writing_style: parsed.writing_style || \"\",\n        target_geo: parsed.target_geo || \"\",\n        master_keyword_list: finalMasterKeywordList,\n        master_keyword_source:\n          explicitMaster.length > 0\n            ? \"explicit\"\n            : dedupedTaskKeywords.length > 0\n            ? \"derived_from_tasks\"\n            : \"\",\n        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],\n        parser_input_tokens: Number(src.usage?.input_tokens || 0),\n        parser_output_tokens: Number(src.usage?.output_tokens || 0),\n        parser_total_tokens: Number(src.usage?.total_tokens || 0)\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        -800
+      ],
+      "id": "314897fe-83fb-4531-a498-6cc27267ef63",
+      "name": "(Brief + Task) Normalizer"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        -784
+      ],
+      "id": "a922e0cf-66a7-4e9b-b23d-b6dbff8b674e",
+      "name": "Preserve Brief Info after Writer"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -544,
+        -800
+      ],
+      "id": "5866f171-1250-4cd6-b099-7acc8083457e",
+      "name": "Preserve Brief Info after Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const j = item.json || {};\n\n  const getWriterDraft = (src) => {\n    if (Array.isArray(src.output)) {\n      for (const out of src.output) {\n        if (Array.isArray(out.content)) {\n          for (const c of out.content) {\n            if (typeof c.text === \"string\" && c.text.trim()) {\n              return c.text.trim();\n            }\n          }\n        }\n      }\n    }\n\n    if (typeof src.output_text === \"string\" && src.output_text.trim()) {\n      return src.output_text.trim();\n    }\n\n    if (typeof src.text === \"string\" && src.text.trim()) {\n      return src.text.trim();\n    }\n\n    return \"\";\n  };\n\n  const writerUsage = j.usage || {};\n  const createdAt = Number(j.created_at || 0);\n  const completedAt = Number(j.completed_at || 0);\n\n  const writerRuntimeSeconds =\n    createdAt && completedAt && completedAt >= createdAt\n      ? completedAt - createdAt\n      : null;\n\n  return {\n    json: {\n      task_id: j.task_id || \"\",\n      task_number: Number(j.task_number || 0),\n      task_title: j.task_title || \"\",\n\n      company_name: j.company_name || \"\",\n      content_type: j.content_type || \"\",\n      target_geo: j.target_geo || \"\",\n      contact_phone: j.contact_phone || \"\",\n\n\n      required_word_count: Number(j.required_word_count || 0),\n      selected_keywords: Array.isArray(j.selected_keywords) ? j.selected_keywords : [],\n\n      writer_model: j.model || \"\",\n      writer_created_at: createdAt || null,\n      writer_completed_at: completedAt || null,\n      writer_runtime_seconds: writerRuntimeSeconds,\n\n      writer_input_tokens: Number(writerUsage.input_tokens || 0),\n      writer_output_tokens: Number(writerUsage.output_tokens || 0),\n      writer_reasoning_tokens: Number(writerUsage.output_tokens_details?.reasoning_tokens || 0),\n      writer_total_tokens: Number(writerUsage.total_tokens || 0),\n\n      final_draft: getWriterDraft(j)\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        -784
+      ],
+      "id": "8437aa50-6176-486c-82d4-b8fe7efe40da",
+      "name": "Validation handoff"
+    },
+    {
+      "parameters": {
+        "content": "## Time and Token\n\n### Reasoning Medium:\n- Total Token Average 7000\n- Total Runtime Average 90s\n\n### Reasoning Hight\n- Total Token Average 11000\n- Total Runtime Average 130s",
+        "height": 400,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        128,
+        -992
+      ],
+      "typeVersion": 1,
+      "id": "a1797a7f-49aa-411e-aad1-f2724aef2756",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "const META_TITLE_MIN = 45;\nconst META_TITLE_MAX = 60;\nconst META_DESCRIPTION_MIN = 145;\nconst META_DESCRIPTION_MAX = 160;\n\nconst SMALL_WORDS = new Set([\n  \"a\", \"an\", \"and\", \"as\", \"at\", \"but\", \"by\", \"for\", \"from\",\n  \"in\", \"of\", \"on\", \"or\", \"per\", \"the\", \"to\", \"up\", \"via\", \"vs\", \"with\"\n]);\n\nconst AU_REGION_ALIASES = {\n  vic: [\"vic\", \"victoria\"],\n  nsw: [\"nsw\", \"new south wales\"],\n  qld: [\"qld\", \"queensland\"],\n  sa: [\"sa\", \"south australia\"],\n  wa: [\"wa\", \"western australia\"],\n  tas: [\"tas\", \"tasmania\"],\n  act: [\"act\", \"australian capital territory\"],\n  nt: [\"nt\", \"northern territory\"],\n};\n\nfunction stripCodeFences(value) {\n  return String(value || \"\")\n    .replace(/^```markdown\\s*/i, \"\")\n    .replace(/^```md\\s*/i, \"\")\n    .replace(/^```\\s*/i, \"\")\n    .replace(/\\s*```$/i, \"\")\n    .trim();\n}\n\nfunction normaliseNewlines(value) {\n  return String(value || \"\")\n    .replace(/\\\\r\\\\n/g, \"\\n\")\n    .replace(/\\\\n/g, \"\\n\")\n    .replace(/\\r\\n/g, \"\\n\")\n    .replace(/\\r/g, \"\\n\");\n}\n\nfunction stripLinkUrls(value) {\n  return String(value || \"\").replace(/\\[([^\\]]+)\\]\\([^)]+\\)/g, \"$1\");\n}\n\nfunction normaliseForMatch(value) {\n  return stripLinkUrls(String(value || \"\"))\n    .normalize(\"NFKC\")\n    .replace(/[’]/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim()\n    .toLowerCase();\n}\n\nfunction normaliseGeoValue(value) {\n  return stripLinkUrls(String(value || \"\"))\n    .normalize(\"NFKC\")\n    .replace(/[’]/g, \"'\")\n    .replace(/[(),/-]/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim()\n    .toLowerCase();\n}\n\nfunction escapeRegExp(value) {\n  return String(value || \"\").replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n}\n\nfunction containsNormalised(haystack, needle) {\n  const h = normaliseForMatch(haystack);\n  const n = normaliseForMatch(needle);\n  return Boolean(h && n && h.includes(n));\n}\n\nfunction isWordChar(char) {\n  return /^[a-z0-9]$/i.test(char || \"\");\n}\n\nfunction countWords(value) {\n  return String(value || \"\")\n    .trim()\n    .split(/\\s+/)\n    .filter(Boolean).length;\n}\n\nfunction uniqueLower(values) {\n  const seen = new Set();\n  const out = [];\n\n  for (const value of values) {\n    const trimmed = String(value || \"\").trim();\n    const key = trimmed.toLowerCase();\n    if (!trimmed || seen.has(key)) continue;\n    seen.add(key);\n    out.push(trimmed);\n  }\n\n  return out;\n}\n\nfunction normalisePhone(value) {\n  return String(value || \"\").replace(/\\D+/g, \"\");\n}\n\nfunction hasPhone(text, phone) {\n  const phoneDigits = normalisePhone(phone);\n  if (!phoneDigits) return false;\n\n  const textDigits = normalisePhone(text);\n  return textDigits.includes(phoneDigits);\n}\n\nfunction hasContactPagePhrase(text) {\n  const t = normaliseForMatch(text);\n\n  return [\n    /\\bcontact us online\\b/,\n    /\\bcontact page\\b/,\n    /\\bvisit (our )?contact page\\b/,\n    /\\bthrough (our )?contact page\\b/,\n    /\\bvia (our )?contact page\\b/,\n    /\\bon (our )?contact page\\b/,\n    /\\bbook (through|via|on) (our )?contact page\\b/,\n    /\\brequest a quote (through|via|on) (our )?contact page\\b/,\n    /\\bget in touch online\\b/,\n    /\\breach out online\\b/,\n    /\\benquire online\\b/,\n    /\\benquire via (our )?contact page\\b/,\n    /\\benquire through (our )?contact page\\b/,\n  ].some((pattern) => pattern.test(t));\n}\n\nfunction isTitleCaseHeading(value) {\n  const words = String(value || \"\")\n    .trim()\n    .split(/\\s+/)\n    .map(word => word.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, \"\"))\n    .filter(Boolean);\n\n  if (!words.length) return false;\n\n  return words.every((rawWord) => {\n    const parts = rawWord.split(\"-\");\n\n    return parts.every((part) => {\n      if (!part) return true;\n      if (/^\\d+$/.test(part)) return true;\n      if (/^[A-Z0-9&/]+$/.test(part)) return true;\n      if (/^[A-Z][A-Za-z0-9'’]*$/.test(part)) return true;\n      if (/^[a-z][A-Za-z0-9'’]*$/.test(part)) {\n        return SMALL_WORDS.has(part.toLowerCase());\n      }\n      return false;\n    });\n  });\n}\n\nfunction getRegionAliases(region) {\n  const norm = normaliseGeoValue(region);\n  if (!norm) return [];\n\n  for (const variants of Object.values(AU_REGION_ALIASES)) {\n    if (variants.includes(norm)) {\n      return [...new Set(variants)];\n    }\n  }\n\n  return [norm];\n}\n\nfunction looksLikeRegionCode(value) {\n  const raw = String(value || \"\").trim();\n  return /^[A-Z]{2,4}$/.test(raw);\n}\n\nfunction splitTrailingRegion(raw) {\n  const cleaned = String(raw || \"\").trim().replace(/\\s+/g, \" \");\n  if (!cleaned) return { locality: \"\", regions: [] };\n\n  const tokens = cleaned.split(/\\s+/);\n\n  for (let size = Math.min(4, tokens.length - 1); size >= 1; size--) {\n    const tailRaw = tokens.slice(-size).join(\" \");\n    const tailNorm = normaliseGeoValue(tailRaw);\n\n    const isKnownAlias = Object.values(AU_REGION_ALIASES).some(list => list.includes(tailNorm));\n    const isCode = size === 1 && looksLikeRegionCode(tailRaw);\n\n    if (isKnownAlias || isCode) {\n      return {\n        locality: tokens.slice(0, -size).join(\" \").trim(),\n        regions: [tailRaw.trim()],\n      };\n    }\n  }\n\n  return { locality: cleaned, regions: [] };\n}\n\nfunction parseTargetGeo(targetGeo) {\n  const raw = String(targetGeo || \"\").trim();\n  if (!raw) return { locality: \"\", regions: [] };\n\n  const parenRegions = Array.from(raw.matchAll(/\\(([^)]+)\\)/g))\n    .flatMap(match => String(match[1] || \"\").split(/[,/]/))\n    .map(v => v.trim())\n    .filter(Boolean);\n\n  const withoutParens = raw.replace(/\\([^)]*\\)/g, \" \").replace(/\\s+/g, \" \").trim();\n  const parts = withoutParens\n    .split(/\\s*[-,]\\s*/)\n    .map(v => v.trim())\n    .filter(Boolean);\n\n  if (parts.length >= 2) {\n    return {\n      locality: parts[0],\n      regions: [...parts.slice(1), ...parenRegions].filter(Boolean),\n    };\n  }\n\n  if (parenRegions.length) {\n    return {\n      locality: withoutParens,\n      regions: parenRegions,\n    };\n  }\n\n  return splitTrailingRegion(withoutParens);\n}\n\nfunction buildGeoVariants(targetGeo) {\n  const raw = String(targetGeo || \"\").trim();\n  if (!raw) return [];\n\n  const { locality, regions } = parseTargetGeo(raw);\n  const variants = new Set();\n\n  if (raw) variants.add(raw);\n  if (locality) variants.add(locality);\n\n  const regionVariants = new Set();\n\n  for (const region of regions) {\n    const trimmed = String(region || \"\").trim();\n    if (!trimmed) continue;\n\n    regionVariants.add(trimmed);\n    getRegionAliases(trimmed).forEach(alias => regionVariants.add(alias));\n  }\n\n  if (!locality && regionVariants.size) {\n    for (const region of regionVariants) {\n      variants.add(region);\n    }\n  }\n\n  for (const region of regionVariants) {\n    if (!locality || !region) continue;\n\n    variants.add(`${locality} ${region}`);\n    variants.add(`${locality}, ${region}`);\n    variants.add(`${locality} (${region})`);\n    variants.add(`${locality} - ${region}`);\n  }\n\n  return [...variants]\n    .map(v => String(v || \"\").replace(/\\s+/g, \" \").trim())\n    .filter(Boolean);\n}\n\nfunction hasGeoMatch(text, targetGeo) {\n  const source = normaliseGeoValue(text);\n  if (!source) return false;\n\n  const variants = buildGeoVariants(targetGeo)\n    .map(normaliseGeoValue)\n    .filter(Boolean)\n    .sort((a, b) => b.length - a.length);\n\n  return variants.some((variant) => {\n    const pattern = new RegExp(`(^|\\\\s)${escapeRegExp(variant)}(?=\\\\s|$)`, \"i\");\n    return pattern.test(source);\n  });\n}\n\nfunction buildKeywordVariants(keyword, targetGeo) {\n  const baseKeyword = String(keyword || \"\").trim();\n  if (!baseKeyword) return [];\n\n  const variants = new Set([baseKeyword]);\n  const tokens = baseKeyword.split(/\\s+/).filter(Boolean);\n  const candidateTails = new Set();\n\n  const geoVariants = buildGeoVariants(targetGeo)\n    .map(v => String(v).trim())\n    .filter(Boolean)\n    .sort((a, b) => b.length - a.length);\n\n  geoVariants.forEach(v => candidateTails.add(v));\n\n  const safeGeo = String(targetGeo || \"\").trim();\n  if (safeGeo) {\n    candidateTails.add(safeGeo);\n    safeGeo\n      .split(/[-,()/]/)\n      .map(v => v.trim())\n      .filter(Boolean)\n      .forEach(v => candidateTails.add(v));\n  }\n\n  for (let size = 1; size <= Math.min(3, tokens.length - 1); size++) {\n    candidateTails.add(tokens.slice(-size).join(\" \"));\n  }\n\n  const lowerBase = baseKeyword.toLowerCase();\n\n  for (const tail of candidateTails) {\n    const geoTail = String(tail || \"\").trim();\n    if (!geoTail) continue;\n\n    const lowerTail = geoTail.toLowerCase();\n\n    if (lowerBase.endsWith(` in ${lowerTail}`)) {\n      const stem = baseKeyword.slice(0, baseKeyword.length - (`in ${geoTail}`).length).trim();\n      if (stem) {\n        variants.add(`${stem} ${geoTail}`.replace(/\\s+/g, \" \").trim());\n\n        for (const altGeo of geoVariants) {\n          variants.add(`${stem} ${altGeo}`.replace(/\\s+/g, \" \").trim());\n          variants.add(`${stem} in ${altGeo}`.replace(/\\s+/g, \" \").trim());\n        }\n      }\n    }\n\n    if (lowerBase.endsWith(` ${lowerTail}`) && !lowerBase.endsWith(` in ${lowerTail}`)) {\n      const stem = baseKeyword.slice(0, baseKeyword.length - geoTail.length).trim();\n      if (stem) {\n        variants.add(`${stem} in ${geoTail}`.replace(/\\s+/g, \" \").trim());\n\n        for (const altGeo of geoVariants) {\n          variants.add(`${stem} ${altGeo}`.replace(/\\s+/g, \" \").trim());\n          if (!/\\bin$/i.test(stem)) {\n            variants.add(`${stem} in ${altGeo}`.replace(/\\s+/g, \" \").trim());\n          }\n        }\n      }\n    }\n  }\n\n  return [...variants];\n}\n\nfunction keywordEquivalent(a, b, targetGeo) {\n  const aVariants = new Set(buildKeywordVariants(a, targetGeo).map(normaliseForMatch));\n  const bVariants = buildKeywordVariants(b, targetGeo).map(normaliseForMatch);\n  return bVariants.some(v => aVariants.has(v));\n}\n\nfunction sameKeywordSet(a, b, targetGeo) {\n  const left = uniqueLower(a);\n  const right = uniqueLower(b);\n\n  if (left.length !== right.length) return false;\n\n  const used = new Set();\n\n  for (const leftKeyword of left) {\n    const matchIndex = right.findIndex((rightKeyword, index) => {\n      if (used.has(index)) return false;\n      return keywordEquivalent(leftKeyword, rightKeyword, targetGeo);\n    });\n\n    if (matchIndex === -1) return false;\n    used.add(matchIndex);\n  }\n\n  return true;\n}\n\nfunction buildKeywordEntries(keywords, targetGeo) {\n  return uniqueLower(keywords)\n    .map((keyword) => {\n      const variants = buildKeywordVariants(keyword, targetGeo)\n        .map(normaliseForMatch)\n        .filter(Boolean)\n        .sort((a, b) => b.length - a.length);\n\n      return {\n        keyword,\n        variants,\n        maxLength: variants.length ? variants[0].length : 0,\n      };\n    })\n    .sort((a, b) => b.maxLength - a.maxLength);\n}\n\nfunction getKeywordMatchCounts(text, keywordEntries) {\n  const source = normaliseForMatch(text);\n  const counts = Object.fromEntries(keywordEntries.map(entry => [entry.keyword, 0]));\n\n  if (!source) return counts;\n\n  let index = 0;\n\n  while (index < source.length) {\n    let bestMatch = null;\n\n    for (const entry of keywordEntries) {\n      for (const variant of entry.variants) {\n        if (!variant) continue;\n        if (!source.startsWith(variant, index)) continue;\n\n        const before = index === 0 ? \"\" : source[index - 1];\n        const after = index + variant.length >= source.length ? \"\" : source[index + variant.length];\n\n        if (isWordChar(before) || isWordChar(after)) continue;\n\n        if (!bestMatch || variant.length > bestMatch.variant.length) {\n          bestMatch = {\n            keyword: entry.keyword,\n            variant,\n          };\n        }\n      }\n    }\n\n    if (bestMatch) {\n      counts[bestMatch.keyword] += 1;\n      index += bestMatch.variant.length;\n    } else {\n      index += 1;\n    }\n  }\n\n  return counts;\n}\n\nfunction sumKeywordHits(counts) {\n  return Object.values(counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);\n}\n\nfunction parseDraft(markdown) {\n  const cleaned = stripCodeFences(normaliseNewlines(markdown));\n  const lines = cleaned.split(\"\\n\");\n\n  const keywordsIndex = lines.findIndex(line => /^keywords(?: used)?:/i.test(line.trim()));\n  const metaTitleIndex = lines.findIndex(line => /^Meta Title:/i.test(line.trim()));\n  const metaDescriptionIndex = lines.findIndex(line => /^Meta Description:/i.test(line.trim()));\n  const h1Index = lines.findIndex(line => /^#\\s+/.test(line.trim()));\n  const h2Indices = lines\n    .map((line, index) => (/^##\\s+/.test(line.trim()) ? index : -1))\n    .filter(index => index >= 0);\n\n  const keywordsLine = keywordsIndex >= 0 ? lines[keywordsIndex].trim() : \"\";\n  const metaTitleLine = metaTitleIndex >= 0 ? lines[metaTitleIndex].trim() : \"\";\n  const metaDescriptionLine = metaDescriptionIndex >= 0 ? lines[metaDescriptionIndex].trim() : \"\";\n  const h1Line = h1Index >= 0 ? lines[h1Index].trim() : \"\";\n\n  const outputKeywords = keywordsLine\n    ? keywordsLine\n        .replace(/^keywords(?: used)?:\\s*/i, \"\")\n        .split(\",\")\n        .map(v => v.trim())\n        .filter(Boolean)\n    : [];\n\n  const metaTitle = metaTitleLine.replace(/^Meta Title:\\s*/i, \"\").trim();\n  const metaDescription = metaDescriptionLine.replace(/^Meta Description:\\s*/i, \"\").trim();\n  const h1 = h1Line.replace(/^#\\s+/, \"\").trim();\n\n  const introStart = h1Index >= 0 ? h1Index + 1 : -1;\n  const introEnd = h2Indices.length ? h2Indices[0] : lines.length;\n  const intro = introStart >= 0\n    ? lines.slice(introStart, introEnd).join(\"\\n\").trim()\n    : \"\";\n\n  const sections = h2Indices.map((start, idx) => {\n    const next = h2Indices[idx + 1] ?? lines.length;\n    const heading = lines[start].replace(/^##\\s+/, \"\").trim();\n    const body = lines.slice(start + 1, next).join(\"\\n\").trim();\n    return { heading, body };\n  });\n\n  const cta = sections.length ? sections[sections.length - 1] : { heading: \"\", body: \"\" };\n  const contentSections = sections.length > 1 ? sections.slice(0, -1) : [];\n\n  return {\n    cleaned,\n    outputKeywords,\n    metaTitle,\n    metaDescription,\n    h1,\n    intro,\n    sections,\n    contentSections,\n    cta,\n  };\n}\n\nreturn items.map((item) => {\n  const j = item.json || {};\n\n  const draft = String(j.final_draft || \"\").trim();\n  const selectedKeywords = uniqueLower(Array.isArray(j.selected_keywords) ? j.selected_keywords : []);\n  const targetGeo = String(j.target_geo || \"\").trim();\n  const companyName = String(j.company_name || \"\").trim();\n  const contactPhone = String(j.contact_phone || \"\").trim();\n\n  const failures = [];\n\n  function addFailure(code, message) {\n    failures.push({ code, message });\n  }\n\n  if (!draft) {\n    addFailure(\"draft_missing\", `final_draft is missing for task_id=${j.task_id || \"unknown\"}`);\n  }\n\n  if (!selectedKeywords.length) {\n    addFailure(\"selected_keywords_missing\", `selected_keywords is missing or empty for task_id=${j.task_id || \"unknown\"}`);\n  }\n\n  const parsed = parseDraft(draft);\n\n  const wordCount = countWords(\n    [\n      parsed.h1,\n      parsed.intro,\n      ...parsed.sections.map(section => `${section.heading}\\n${section.body}`)\n    ].join(\"\\n\\n\")\n  );\n\n  const firstLine = parsed.cleaned.split(\"\\n\")[0] || \"\";\n  if (!/^keywords(?: used)?:/i.test(firstLine.trim())) {\n    addFailure(\"keywords_line_position\", \"Keywords used line must be the first line.\");\n  }\n\n  if (!parsed.metaTitle) addFailure(\"meta_title_missing\", \"Meta Title is missing.\");\n  if (!parsed.metaDescription) addFailure(\"meta_description_missing\", \"Meta Description is missing.\");\n  if (!parsed.h1) addFailure(\"h1_missing\", \"H1 is missing.\");\n  if (!parsed.intro) addFailure(\"intro_missing\", \"Intro paragraph is missing.\");\n  if (!parsed.cta.body) addFailure(\"cta_missing\", \"CTA body is missing.\");\n\n  if (parsed.metaTitle) {\n    const len = parsed.metaTitle.length;\n    if (len < META_TITLE_MIN || len > META_TITLE_MAX) {\n      addFailure(\"meta_title_length\", `Meta Title is ${len} characters. Required: ${META_TITLE_MIN} to ${META_TITLE_MAX}.`);\n    }\n  }\n\n  if (parsed.metaDescription) {\n    const len = parsed.metaDescription.length;\n    if (len < META_DESCRIPTION_MIN || len > META_DESCRIPTION_MAX) {\n      addFailure(\"meta_description_length\", `Meta Description is ${len} characters. Required: ${META_DESCRIPTION_MIN} to ${META_DESCRIPTION_MAX}.`);\n    }\n  }\n\n  if (parsed.metaTitle && parsed.h1) {\n    if (normaliseForMatch(parsed.metaTitle) !== normaliseForMatch(parsed.h1)) {\n      addFailure(\"meta_title_h1_mismatch\", \"Meta Title and H1 must match exactly.\");\n    }\n  }\n\n  if (companyName && parsed.metaTitle && containsNormalised(parsed.metaTitle, companyName)) {\n    addFailure(\"meta_title_has_company\", \"Meta Title must not include the company name.\");\n  }\n\n  if (companyName && parsed.h1 && containsNormalised(parsed.h1, companyName)) {\n    addFailure(\"h1_has_company\", \"H1 must not include the company name.\");\n  }\n\n  if (companyName && parsed.metaDescription && !containsNormalised(parsed.metaDescription, companyName)) {\n    addFailure(\"meta_description_missing_company\", \"Meta Description must include the company name.\");\n  }\n\n  if (targetGeo && parsed.metaDescription && !hasGeoMatch(parsed.metaDescription, targetGeo)) {\n    addFailure(\"meta_description_missing_geo\", \"Meta Description must include the target geo.\");\n  }\n\n  if (companyName && parsed.intro && !containsNormalised(parsed.intro, companyName)) {\n    addFailure(\"intro_missing_company\", \"Intro must include the company name.\");\n  }\n\n  if (targetGeo && parsed.intro && !hasGeoMatch(parsed.intro, targetGeo)) {\n    addFailure(\"intro_missing_geo\", \"Intro must include the target geo.\");\n  }\n\n  if (parsed.h1 && !isTitleCaseHeading(parsed.h1)) {\n    addFailure(\"h1_not_title_case\", \"H1 must be in Title Case.\");\n  }\n\n  parsed.sections.forEach((section, index) => {\n    if (section.heading && !isTitleCaseHeading(section.heading)) {\n      addFailure(\"h2_not_title_case\", `H2 heading ${index + 1} must be in Title Case.`);\n    }\n  });\n\n  if (parsed.cta.body && !hasContactPagePhrase(parsed.cta.body)) {\n    addFailure(\n      \"cta_missing_contact_phrase\",\n      \"CTA body must include a contact-page style phrase such as 'contact us online', 'visit our contact page', or similar wording.\"\n    );\n  }\n\n  if (contactPhone) {\n    if (!parsed.cta.body || !hasPhone(parsed.cta.body, contactPhone)) {\n      addFailure(\n        \"cta_missing_phone\",\n        \"CTA body must include the phone number when one is provided.\"\n      );\n    }\n\n    const nonCtaText = [\n      parsed.metaTitle,\n      parsed.metaDescription,\n      parsed.h1,\n      parsed.intro,\n      ...parsed.contentSections.map(section => `${section.heading}\\n${section.body}`),\n      parsed.cta.heading,\n    ].join(\"\\n\\n\");\n\n    if (hasPhone(nonCtaText, contactPhone)) {\n      addFailure(\n        \"phone_outside_cta\",\n        \"Phone number must appear in the CTA body only.\"\n      );\n    }\n  }\n\n  if (parsed.outputKeywords.length && !sameKeywordSet(parsed.outputKeywords, selectedKeywords, targetGeo)) {\n    addFailure(\"keywords_used_mismatch\", \"Keywords used line does not match selected_keywords.\");\n  }\n\n  const keywordEntries = buildKeywordEntries(selectedKeywords, targetGeo);\n\n  const publishableParts = [\n    { name: \"Meta Title\", text: parsed.metaTitle },\n    { name: \"Meta Description\", text: parsed.metaDescription },\n    { name: \"H1\", text: parsed.h1 },\n    { name: \"Intro\", text: parsed.intro },\n    ...parsed.contentSections.flatMap((section, index) => ([\n      { name: `H2 ${index + 1} Heading`, text: section.heading },\n      { name: `H2 ${index + 1} Body`, text: section.body },\n    ])),\n    { name: \"CTA Heading\", text: parsed.cta.heading },\n    { name: \"CTA Body\", text: parsed.cta.body },\n  ];\n\n  const perPartKeywordCounts = Object.fromEntries(\n    publishableParts.map(part => [\n      part.name,\n      getKeywordMatchCounts(part.text, keywordEntries),\n    ])\n  );\n\n  const keywordCounts = {};\n\n  for (const keyword of selectedKeywords) {\n    const perPart = Object.fromEntries(\n      publishableParts.map(part => [\n        part.name,\n        perPartKeywordCounts[part.name][keyword] || 0,\n      ])\n    );\n\n    const total = Object.values(perPart).reduce((sum, count) => sum + count, 0);\n\n    keywordCounts[keyword] = {\n      total,\n      per_part: perPart,\n    };\n\n    if (total !== 2) {\n      addFailure(\n        \"keyword_total_count\",\n        `Keyword '${keyword}' appears ${total} times. It must appear exactly 2 times.`\n      );\n    }\n  }\n\n  const metaTitleHits = sumKeywordHits(perPartKeywordCounts[\"Meta Title\"]);\n  if (parsed.metaTitle && metaTitleHits !== 1) {\n    addFailure(\"meta_title_keyword_count\", `Meta Title contains ${metaTitleHits} selected keywords. It must contain exactly 1.`);\n  }\n\n  const metaDescriptionHits = sumKeywordHits(perPartKeywordCounts[\"Meta Description\"]);\n  if (parsed.metaDescription && metaDescriptionHits !== 1) {\n    addFailure(\"meta_description_keyword_count\", `Meta Description contains ${metaDescriptionHits} selected keywords. It must contain exactly 1.`);\n  }\n\n  const h1Hits = sumKeywordHits(perPartKeywordCounts[\"H1\"]);\n  if (parsed.h1 && h1Hits !== 1) {\n    addFailure(\"h1_keyword_count\", `H1 contains ${h1Hits} selected keywords. It must contain exactly 1.`);\n  }\n\n  const introHits = sumKeywordHits(perPartKeywordCounts[\"Intro\"]);\n  if (parsed.intro && introHits !== 1) {\n    addFailure(\"intro_keyword_count\", `Intro contains ${introHits} selected keywords. It must contain exactly 1.`);\n  }\n\n  parsed.contentSections.forEach((section, index) => {\n    const headingCounts = perPartKeywordCounts[`H2 ${index + 1} Heading`];\n    const bodyCounts = perPartKeywordCounts[`H2 ${index + 1} Body`];\n\n    const headingHits = sumKeywordHits(headingCounts);\n    const bodyHits = sumKeywordHits(bodyCounts);\n    const totalHits = headingHits + bodyHits;\n\n    if (headingHits > 1) {\n      addFailure(\n        \"section_heading_keyword_limit\",\n        `Section ${index + 1} heading contains ${headingHits} selected keywords. Max allowed is 1.`\n      );\n    }\n\n    if (bodyHits > 1) {\n      addFailure(\n        \"section_body_keyword_limit\",\n        `Section ${index + 1} body contains ${bodyHits} selected keywords. Max allowed is 1.`\n      );\n    }\n\n    if (totalHits > 2) {\n      addFailure(\n        \"section_total_keyword_limit\",\n        `Section ${index + 1} contains ${totalHits} selected keywords across heading + body. Max allowed is 2.`\n      );\n    }\n  });\n\n  const pass = failures.length === 0;\n\n  const reportLines = [\n    `task_id: ${j.task_id || \"\"}`,\n    `validator_pass: ${pass}`,\n    `writer_model: ${j.writer_model || \"\"}`,\n    `writer_runtime_seconds: ${j.writer_runtime_seconds ?? \"\"}`,\n    `writer_total_tokens: ${Number(j.writer_total_tokens || 0)}`,\n    \"\",\n    `meta_title_char_count: ${parsed.metaTitle.length}`,\n    `meta_description_char_count: ${parsed.metaDescription.length}`,\n    `content_word_count: ${wordCount}`,\n    \"\",\n    \"failures:\",\n    ...(failures.length\n      ? failures.map((failure, index) => `${index + 1}. ${failure.code} -> ${failure.message}`)\n      : [\"none\"]),\n    \"\",\n    \"keyword_counts:\",\n    ...selectedKeywords.map((keyword) => {\n      const info = keywordCounts[keyword] || { total: 0, per_part: {} };\n      return `- ${keyword}: total=${info.total} | ${Object.entries(info.per_part).map(([part, count]) => `${part}=${count}`).join(\", \")}`;\n    }),\n  ];\n\n  return {\n    json: {\n      ...j,\n      validator_pass: pass,\n      validator_failures: failures,\n      validator_report: reportLines.join(\"\\n\"),\n      validator_keyword_counts: keywordCounts,\n      validator_meta_title: parsed.metaTitle,\n      validator_meta_description: parsed.metaDescription,\n      validator_h1: parsed.h1,\n      validator_intro: parsed.intro,\n      validator_cta_heading: parsed.cta.heading,\n      validator_cta_body: parsed.cta.body,\n      validator_output_keywords: parsed.outputKeywords,\n      validator_meta_title_char_count: parsed.metaTitle.length,\n      validator_meta_description_char_count: parsed.metaDescription.length,\n      validator_content_word_count: wordCount,\n    },\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        -784
+      ],
+      "id": "c1227d7d-7a06-4dcf-a8c9-2c35bebeb904",
+      "name": "Validator Node"
+    },
+    {
+      "parameters": {
+        "content": "## Keep Bug Fixing Validator\n\n\nOnce polished we can add it as a feedback with failure to a SEO audit to fix small stuff.",
+        "height": 368,
+        "width": 150
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        672,
+        -1056
+      ],
+      "typeVersion": 1,
+      "id": "c283cdcc-0f73-4938-9c3c-1bd7738924f4",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "function parseTaskId(taskId) {\n  const value = String(taskId || \"\").trim();\n\n  const match = value.match(/^(.*?__attachment_\\d+__)(.*)__task_(\\d+)$/);\n\n  if (!match) {\n    return {\n      brief_batch_id: value.replace(/__task_\\d+$/, \"\"),\n      attachment_stem: value,\n      task_number: 0,\n    };\n  }\n\n  return {\n    brief_batch_id: value.replace(/__task_\\d+$/, \"\"),\n    attachment_stem: match[2],\n    task_number: Number(match[3] || 0),\n  };\n}\n\nfunction cleanFileStem(stem) {\n  return String(stem || \"Draft\")\n    .replace(/\\.[^.]+$/, \"\")\n    .replace(/\\s*\\(\\d+\\)\\s*$/, \"\")\n    .trim();\n}\n\nfunction formatFailures(failures) {\n  const list = Array.isArray(failures) ? failures : [];\n  if (!list.length) return \"\";\n\n  return [\n    \"validator_failures\",\n    ...list.map((failure, index) =>\n      `${index + 1}. ${failure.code || \"failure\"} -> ${failure.message || \"\"}`\n    ),\n    \"\"\n  ].join(\"\\n\");\n}\n\nconst groups = new Map();\n\nfor (const item of items) {\n  const j = item.json || {};\n  const parsed = parseTaskId(j.task_id);\n\n  const groupKey = parsed.brief_batch_id || String(j.task_id || \"\");\n\n  if (!groups.has(groupKey)) {\n    const cleanedStem = cleanFileStem(parsed.attachment_stem);\n\n    groups.set(groupKey, {\n      brief_batch_id: groupKey,\n      output_filename: `${cleanedStem} - Draft`,\n      source_attachment_stem: parsed.attachment_stem || \"\",\n      tasks: [],\n    });\n  }\n\n  groups.get(groupKey).tasks.push({\n    task_id: j.task_id || \"\",\n    task_number: Number(j.task_number || parsed.task_number || 0),\n    task_title: String(j.task_title || \"\").trim(),\n    validator_failures: Array.isArray(j.validator_failures) ? j.validator_failures : [],\n    final_draft: String(j.final_draft || \"\").trim(),\n  });\n}\n\nreturn Array.from(groups.values()).map(group => {\n  group.tasks.sort((a, b) => a.task_number - b.task_number);\n\n  const combined_markdown = group.tasks.map(task => {\n    const parts = [];\n\n    parts.push(`Task ${task.task_number}`);\n    if (task.task_title) {\n      parts.push(`Task Title: ${task.task_title}`);\n    }\n\n    parts.push(\"\");\n\n    const failureBlock = formatFailures(task.validator_failures);\n    if (failureBlock) {\n      parts.push(failureBlock.trimEnd());\n      parts.push(\"\");\n    }\n\n    parts.push(task.final_draft);\n\n    return parts.join(\"\\n\");\n  }).join(\"\\n\\n\\n---\\n\\n\\n\");\n\n  return {\n    json: {\n      brief_batch_id: group.brief_batch_id,\n      output_filename: group.output_filename,\n      task_count: group.tasks.length,\n      combined_markdown,\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        -784
+      ],
+      "id": "3c900440-0b2f-4f6f-9788-107012cb2035",
+      "name": "Final Payload to GDrive"
+    },
+    {
+      "parameters": {
+        "operation": "createFromText",
+        "content": "={{ $json.combined_markdown }}",
+        "name": "={{$json.output_filename}} - draft.md",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GOOGLE_DRIVE_FOLDER_ID",
+          "mode": "list",
+          "cachedResultName": "Example Drafts Folder",
+          "cachedResultUrl": "REPLACE_WITH_GOOGLE_DRIVE_FOLDER_URL"
+        },
+        "options": {
+          "convertToGoogleDocument": true
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1296,
+        -784
+      ],
+      "id": "4e3d38ea-9579-41bf-a03f-67e613a70cbd",
+      "name": "Create file from text"
+    },
+    {
+      "parameters": {
+        "resource": "thread",
+        "operation": "removeLabels"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1296,
+        -592
+      ],
+      "id": "6c832eb8-6959-41c3-b9ad-3921cd3c37d1",
+      "name": "Processing -> Done",
+      "webhookId": "REPLACE_WITH_WEBHOOK_ID"
+    }
+  ],
+  "connections": {
+    "Split attachments": {
+      "main": [
+        [
+          {
+            "node": "DOCX -> Text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Brief Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser Node": {
+      "main": [
+        [
+          {
+            "node": "Preserve Brief Info after Parser",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Brief files": {
+      "main": [
+        [
+          {
+            "node": "Split attachments",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pending -> Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DOCX -> Text": {
+      "main": [
+        [
+          {
+            "node": "(Brief + RAW Text) Envelope ",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Brief Envelope": {
+      "main": [
+        [
+          {
+            "node": "(Brief + RAW Text) Envelope ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand tasks lean": {
+      "main": [
+        [
+          {
+            "node": "Keyword Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keyword Planner": {
+      "main": [
+        [
+          {
+            "node": "Copywriter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preserve Brief Info after Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copywriter": {
+      "main": [
+        [
+          {
+            "node": "Preserve Brief Info after Writer",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "(Brief + RAW Text) Envelope ": {
+      "main": [
+        [
+          {
+            "node": "Parser Node",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preserve Brief Info after Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "(Brief + Task) Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Expand tasks lean",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Brief Info after Writer": {
+      "main": [
+        [
+          {
+            "node": "Validation handoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Brief Info after Parser": {
+      "main": [
+        [
+          {
+            "node": "(Brief + Task) Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation handoff": {
+      "main": [
+        [
+          {
+            "node": "Validator Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validator Node": {
+      "main": [
+        [
+          {
+            "node": "Final Payload to GDrive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Payload to GDrive": {
+      "main": [
+        [
+          {
+            "node": "Create file from text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create file from text": {
+      "main": [
+        [
+          {
+            "node": "Processing -> Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}
