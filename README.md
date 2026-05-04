@@ -85,7 +85,6 @@ The validator checks the generated draft against rules such as:
 
 - Meta title length
 - Meta description length
-- H1 matching the meta title
 - Required keyword counts
 - Keyword placement rules
 - Heading title case
@@ -117,7 +116,7 @@ The final payload builder groups task outputs back into their original brief, ad
 - Multi-attachment support
 - Multi-task brief support
 - Structured schema extraction
-- Keyword deduplication
+- Keyword deduplication to avoid keyword stuffing
 - Word-count-based keyword planning
 - Dedicated writer and validator stages
 - Token and runtime tracking
