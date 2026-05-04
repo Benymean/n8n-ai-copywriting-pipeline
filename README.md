@@ -147,10 +147,6 @@ Planned improvements:
 - Add a dedicated SEO patching node for failed validator checks
 - Improve validator coverage
 - Add better error routing
-- Add sample anonymised briefs
-- Add setup documentation
-- Add screenshots of the workflow
-- Add a cleaned n8n workflow export
 
 ## Security Note
 
